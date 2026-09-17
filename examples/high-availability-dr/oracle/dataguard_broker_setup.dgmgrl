@@ -1,0 +1,61 @@
+-- ============================================================================
+-- Oracle Data Guard Broker — Setup Configuration (generic, no real data)
+-- ============================================================================
+-- Tujuan    : Membangun konfigurasi Data Guard menggunakan Data Guard Broker
+--             (dgmgrl); pola yang mendukung docs/03-ARCHITECTURE.md §4 dan
+--             docs/06-OPERATIONS-DR-BACKUP.md §3.
+-- Prasyarat : Standby physical sudah dibuat (duplikasi via RMAN / automatic
+--             standby) dan jaringan antar data center tersambung.
+-- Cara pakai:
+--   dgmgrl sys@PRIMARY_DB     (input password pada prompt — JANGAN di file ini)
+--   lalu eksekusi perintah-perintah di bawah.
+-- Catatan   : Ganti DB_UNIQUE_NAME & connect identifier sesuai lingkungan.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 1. Verifikasi status instance/link sebelum konfigurasi
+-- ----------------------------------------------------------------------------
+SHOW DESTINATION IS SYNCHRONIZED;
+
+-- ----------------------------------------------------------------------------
+-- 2. Bangun konfigurasi: register PRIMARY lalu tambah STANDBY
+-- ----------------------------------------------------------------------------
+CREATE CONFIGURATION 'dg_banking' AS
+  PRIMARY DATABASE IS 'PRIMARY_DB'
+  CONNECT IDENTIFIER IS 'PRIMARY_DB';
+
+ADD DATABASE 'STANDBY_DB' AS
+  CONNECT IDENTIFIER IS 'STANDBY_DB'
+  MAINTAINED AS PHYSICAL;
+
+-- ----------------------------------------------------------------------------
+-- 3. Proteksi: pilih mode sesuai topology (docs/03 §4)
+-- ----------------------------------------------------------------------------
+USE CONFIGURATION 'dg_banking';
+
+-- Replika sinkron untuk HA lokal, asinkron untuk DR lintas lokasi.
+-- Protection mode:
+--   MAXIMUM_AVAILABILITY  : sync commit -> data loss = 0 saat link sehat
+--   MAXIMUM_PERFORMANCE   : async commit -> latency rendah (cocok DR jauh)
+SET PROTECTION MODE AS MAXAVAILABILITY;
+
+-- ----------------------------------------------------------------------------
+-- 4. Aktifkan konfigurasi & validasi
+-- ----------------------------------------------------------------------------
+ENABLE CONFIGURATION;
+
+SHOW CONFIGURATION;
+SHOW DATABASE 'PRIMARY_DB';
+SHOW DATABASE 'STANDBY_DB';
+
+-- Validasi replikasi/apply (pra-produksi)
+VALIDATE DATABASE 'STANDBY_DB';
+
+-- ----------------------------------------------------------------------------
+-- 5. Fast-Start Failover (otomasi failover bila primary down)
+--    Memerlukan observer pada host terpisah (independent).
+-- ----------------------------------------------------------------------------
+SET FAST_START FAILOVER ON;
+SET OBSERVER 'DR-OBSERVER-HOST';   -- observer di luar lokasi primary
+
+-- Referensi prosedur switchover/failback manual: dataguard_switchover.dgmgrl

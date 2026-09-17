@@ -1,0 +1,118 @@
+---
+# ============================================================================
+# Ansible playbook — DB server hardening baseline (generic, no real data)
+# Tujuan : Menerapkan kontrol dasar server database Linux (PostgreSQL/umum)
+#          sesuai docs/05-SECURITY-COMPLIANCE.md dan CIS Benchmark.
+# Target : RHEL/Rocky/Alma 8/9. Untuk distro lain, sesuaikan package name.
+# Cara pakai :
+#   ansible-playbook -i inventory/prod.ini examples/security-hardening/linux/ansible_server_hardening.yml \
+#     --ask-vault-pass
+# Catatan :
+#   - Semua secret (password, vault) di Ansible Vault, bukan di file ini.
+# ============================================================================
+
+- name: Baseline hardening untuk server database
+  hosts: db_servers
+  become: true
+  vars:
+    ssh_allowed_users: "ops_dba"
+    ntp_servers:
+      - "0.pool.ntp.org"
+      - "1.pool.ntp.org"
+    sysctl_network_tuning:
+      net.core.somaxconn: 4096
+      net.ipv4.tcp_syncookies: 1
+      net.ipv4.conf.all.rp_filter: 1
+    auditd_rules:
+      - "-w /var/lib/pgsql/data -p wa -k pgsql_data"
+      - "-w /etc/passwd -p wa -k identity"
+      - "-w /etc/sudoers -p wa -k sudoers"
+
+  tasks:
+    # ---------- 1. Update & patch level
+    - name: Update semua package ke versi terbaru (security)
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        security: true
+      when: ansible_os_family == "RedHat"
+
+    # ---------- 2. Time sync (audit butuh waktu akurat)
+    - name: Aktifkan chrony & set NTP server
+      ansible.builtin.include_role:
+        name: rhel_system_roles.timesync
+      vars:
+        timesync_ntp_servers: "{{ ntp_servers }}"
+
+    # ---------- 3. Sysctl — network hardening
+    - name: Terapkan sysctl network tuning
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        reload: true
+      loop: "{{ sysctl_network_tuning | dict2items }}"
+
+    # ---------- 4. Firewall — default deny inbound
+    - name: Pastikan firewalld aktif
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Buka port database ke zona 'internal' saja
+      ansible.posix.firewalld:
+        zone: internal
+        service: postgresql
+        permanent: true
+        immediate: true
+        state: enabled
+
+    # ---------- 5. SSH — batasi user + disable root login
+    - name: Konfigurasi sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?{{ item.key }}\\s"
+        line: "{{ item.key }} {{ item.value }}"
+        validate: "sshd -t -f %s"
+      loop:
+        - { key: "PermitRootLogin",     value: "no" }
+        - { key: "PasswordAuthentication", value: "no" }
+        - { key: "AllowUsers",          value: "{{ ssh_allowed_users }}" }
+        - { key: "MaxAuthTries",        value: "3" }
+        - { key: "X11Forwarding",       value: "no" }
+      notify: Restart sshd
+
+    # ---------- 6. Auditd
+    - name: Aktifkan auditd & tulis rules
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/99-db-hardening.rules
+        content: |
+          {% for rule in auditd_rules %}
+          {{ rule }}
+          {% endfor %}
+        owner: root
+        mode: "0600"
+      notify: Restart auditd
+
+    # ---------- 7. Disable service yang tidak perlu
+    - name: Matikan service yang tidak relevan untuk DB server
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - bluetooth
+        - cups
+      failed_when: false   # service mungkin tidak ada di image minimal
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+
+    - name: Restart auditd
+      ansible.builtin.service:
+        name: auditd
+        state: restarted

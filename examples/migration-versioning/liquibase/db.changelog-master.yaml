@@ -1,0 +1,33 @@
+databaseChangeLog:
+  # =========================================================================
+  # Liquibase root changelog — generic, no real data
+  # Includes setiap file changeset sesuai urutan & penomoran versi.
+  # Bila perubahan dikaitkan environment, pakai attribute 'context'.
+  # =========================================================================
+  - changeSet:
+      id: 1
+      author: dba-platform
+      changes:
+        - sqlFile:
+            path: changesets/v1.0/t001-core-schema.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: true
+  # changeset berikut dibuat oleh developer + reviewed oleh DBA (code review).
+  - changeSet:
+      id: 2
+      author: dev-team
+      context: dev,uat,prod
+      changes:
+        - createIndex:
+            tableName: transaction
+            indexName: idx_trx_status_created
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: created_at
+      rollback:
+        - dropIndex:
+            indexName: idx_trx_status_created
+            tableName: transaction

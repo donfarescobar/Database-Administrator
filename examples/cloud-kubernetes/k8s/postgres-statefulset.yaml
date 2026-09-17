@@ -1,0 +1,143 @@
+# ============================================================================
+# Kubernetes manifest — Postgres (generic, no real data)
+# Tujuan   : StatefulSet + Service + PVC + ConfigMap + NetworkPolicy.
+#            Melengkapi docs/10-CLOUD-KUBERNETES.md (tanpa operator, untuk
+#            kebutuhan dev/test; production seharusnya pakai operator).
+# Catatan  :
+#   - Anti-affinity agar replica tidak di node yang sama.
+#   - NetworkPolicy default-deny + allow hanya dari namespace 'app'.
+#   - ReclaimPolicy: Retain (lihat docs/10 §2).
+# ============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: databases
+  labels: { name: databases, pod-security.kubernetes.io/enforce: restricted }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: databases
+data:
+  # Tuning generik untuk workload OLTP low-traffic; production pakai profile sendiri.
+  postgresql.conf: |
+    listen_addresses = '*'
+    max_connections  = 200
+    shared_buffers   = 256MB
+    work_mem         = 4MB
+    maintenance_work_mem = 64MB
+    effective_cache_size = 768MB
+    log_min_duration_statement = 1000   # log query > 1 detik
+    log_connections = on
+    log_disconnections = on
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: databases
+type: Opaque
+stringData:
+  # Pada production: ganti dengan External Secrets / Vault CSI driver.
+  POSTGRES_DB:       appdb
+  POSTGRES_USER:     app
+  POSTGRES_PASSWORD: change-me-via-secret-manager
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: databases
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: ssd             # sesuaikan dengan StorageClass cluster
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: databases
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{ containerPort: 5432, name: postgres }]
+          envFrom:
+            - secretRef: { name: postgres-credentials }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: config, mountPath: /docker-entrypoint-initdb.d/postgresql.conf, subPath: postgresql.conf }
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "2",    memory: "2Gi" }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "$(POSTGRES_USER)"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # postgres butuh write ke /var/run/postgresql
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: config
+          configMap: { name: postgres-config }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ssd
+        resources: { requests: { storage: 50Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: databases
+spec:
+  clusterIP: None            # headless untuk StatefulSet
+  selector: { app: postgres }
+  ports: [{ port: 5432, name: postgres }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: databases
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app
+  namespace: databases
+spec:
+  podSelector: { matchLabels: { app: postgres } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { name: app } }
+      ports: [{ port: 5432, protocol: TCP }]

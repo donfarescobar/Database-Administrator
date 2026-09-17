@@ -1,0 +1,70 @@
+site_name: Database Engineering Portfolio — Banking & Enterprise
+site_description: Portofolio teknis Senior Database Engineer/Administrator untuk lingkungan Banking & Enterprise
+site_url: https://USERNAME.github.io/REPO_NAME/
+repo_url: https://github.com/USERNAME/REPO_NAME
+repo_name: USERNAME/REPO_NAME
+
+theme:
+  name: material
+  language: id
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.instant
+    - navigation.tracking
+    - toc.integrate
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Professional Summary: 01-PROFESSIONAL-SUMMARY.md
+  - Skills Matrix: 02-SKILLS-MATRIX.md
+  - Architecture: 03-ARCHITECTURE.md
+  - Standards & Governance: 04-STANDARDS-GOVERNANCE.md
+  - Security & Compliance: 05-SECURITY-COMPLIANCE.md
+  - Operations, Backup & DR: 06-OPERATIONS-DR-BACKUP.md
+  - Performance Tuning: 07-PERFORMANCE-TUNING.md
+  - Projects Portfolio: 08-PROJECTS-PORTFOLIO.md
+  - Runbooks & SOP: 09-RUNBOOKS-SOP.md
+  - Cloud & Kubernetes: 10-CLOUD-KUBERNETES.md
+  - Data Warehouse & BI: 11-DATA-WAREHOUSE-BI.md
+  - Certifications: CERTIFICATIONS.md
+
+plugins:
+  - search
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+      fallback_to_build_date: true

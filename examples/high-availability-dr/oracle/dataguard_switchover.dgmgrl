@@ -1,0 +1,54 @@
+-- ============================================================================
+-- Oracle Data Guard — Switchover / Failover / Failback Procedure
+-- ============================================================================
+-- Tujuan    : Prosedur planned switchover, unplanned failover, dan failback —
+--             melengkapi docs/09-RUNBOOKS-SOP.md SOP 3 (Failover) dan DR runbook.
+-- Cara pakai : jalankan perintah di dgmgrl (broker aktif).
+-- Catatan   : JANGAN pernah hardcode password/koneksi host di file ini.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 0. Verifikasi status sebelum eksekusi
+-- ----------------------------------------------------------------------------
+SHOW CONFIGURATION;
+SHOW DATABASE 'PRIMARY_DB';
+SHOW DATABASE 'STANDBY_DB';
+
+-- Pastikan: Transport lag = 0 dan Apply lag = 0 sebelum switchover.
+
+-- ----------------------------------------------------------------------------
+-- 1. PLANNED SWITCHOVER (maintenance — tanpa kehilangan data)
+-- ----------------------------------------------------------------------------
+SWITCHOVER TO 'STANDBY_DB';
+-- Backend broker menangani: sinkronisasi penuh -> convert standby sbg primary
+-- -> convert primary lama sbg standby.
+
+-- Verifikasi peran sudah bertukar:
+SHOW CONFIGURATION;
+SHOW DATABASE 'STANDBY_DB';   -- harus tampil sebagai primary baru
+
+-- ----------------------------------------------------------------------------
+-- 2. FAILBACK ke basis data semula (setelah primary lama pulih & sinkron)
+-- ----------------------------------------------------------------------------
+SWITCHOVER TO 'PRIMARY_DB';
+SHOW CONFIGURATION;
+
+-- ----------------------------------------------------------------------------
+-- 3. UNPLANNED FAILOVER (bencana total primary — potensi data loss hanya bila
+--    replikasi asinkron dan transaksi belum sempat diterapkan)
+-- ----------------------------------------------------------------------------
+FAILOVER TO 'STANDBY_DB';
+
+-- Setelah primary lama pulih, REINSTATE (bukan switchback) karena posisi
+-- terakhir failover — Data Guard akan rebuild ulang database tsb dari primary.
+REINSTATE DATABASE 'PRIMARY_DB';
+SHOW CONFIGURATION;
+
+-- ----------------------------------------------------------------------------
+-- 4. Validasi pasca-failover (docs/09 SOP 3 langkah 5–6)
+-- ----------------------------------------------------------------------------
+SHOW DATABASE 'STANDBY_DB';
+SHOW DATABASE 'PRIMARY_DB';
+
+-- Arahkan aplikasi/DNS ke listener/FQDN baru.
+-- Dokumentasikan timeline & status pada laporan insiden / DR drill.

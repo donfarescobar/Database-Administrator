@@ -1,0 +1,33 @@
+# ============================================================================
+# crontab fragment — generic, no real data
+# Tujuan   : Jadwal eksekusi script operasional (backup, health check, dll).
+# Cara pakai :
+#   crontab -u dba -e
+#   lalu paste isi file ini (header # tidak wajib di crontab real).
+# Catatan  :
+#   - Field waktu: minute hour day-of-month month day-of-week
+#   - Hindari :00 / :30 — pakai offset agar tidak menumpuk dengan job lain
+#   - Semua script diasumsikan ada di /opt/dbops/bin dan executable
+# ============================================================================
+
+# Environment (override default user PATH agar cron bisa menemukan tool)
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/opt/dbops/bin
+MAILTO=""
+PGHOST=db-prod-01.internal
+PGUSER=backup_role
+BACKUP_DIR=/var/backups/postgres
+RETENTION_DAYS=14
+ALERT_WEBHOOG=https://hooks.example.invalid/dbops  # ganti dengan webhook tim
+
+# --- 02:07 setiap hari — full backup (off-peak setelah ETL selesai)
+7  2  *  *  *   /opt/dbops/bin/db_backup.sh
+
+# --- setiap 15 menit — health check ringan; alert jika exit non-zero
+*/15 * *  *  *   /opt/dbops/bin/db_healthcheck.sh || /opt/dbops/bin/notify_failure.sh healthcheck
+
+# --- 03:30 hari Minggu — index maintenance / vacuum analyze
+30 3  *  *  0   /opt/dbops/bin/db_maintenance.sh
+
+# --- 04:00 hari pertama bulan — arsip & kirim ke offsite (immutable storage)
+0  4  1  *  *   /opt/dbops/bin/db_archive_monthly.sh

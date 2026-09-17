@@ -1,0 +1,47 @@
+version: 2
+
+# =========================================================================
+# dbt sources — generic, no real data
+# Tujuan : Mendeklarasikan source tables untuk model staging.
+#          tests pada kolom kritis (not_null, unique, accepted_values)
+#          adalah kontrol kualitas data (lihat docs/11 §7).
+# =========================================================================
+
+sources:
+  - name: raw
+    description: "Schema raw (landing zone) — data dari sistem sumber."
+    database: dw
+    schema: raw
+    loaded_at_field: updated_at
+    freshness:
+      warn_after:  { count: 6,  period: hour }
+      error_after: { count: 24, period: hour }
+    tables:
+      - name: orders
+        description: "Tabel order dari sistem OLTP sumber."
+        columns:
+          - name: order_id
+            description: "Identifier unik order (business key)."
+            tests:
+              - not_null
+              - unique
+          - name: customer_id
+            tests:
+              - not_null
+              - relationships:
+                  to: source('raw', 'customers')
+                  field: customer_id
+          - name: amount
+            tests:
+              - not_null
+          - name: currency
+            tests:
+              - accepted_values:
+                  values: ['IDR', 'USD', 'SGD', 'EUR']
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['pending', 'paid', 'shipped', 'cancelled', 'refunded']
+          - name: updated_at
+            tests:
+              - not_null

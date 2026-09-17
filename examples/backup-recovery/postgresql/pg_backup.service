@@ -1,0 +1,38 @@
+[Unit]
+# ============================================================================
+# systemd service unit — generic, no real data
+# Tujuan   : Wrapper untuk script backup; dipanggil oleh db-backup.timer.
+#            Alternatif modern untuk cron (lihat README).
+# Lokasi   : /etc/systemd/system/db-backup.service
+# ============================================================================
+
+Description=Postgres backup ke object storage lokal
+Documentation=man:pg_dump(1)
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+
+# Konfigurasi via EnvironmentFile (bukan di unit ini)
+EnvironmentFile=/etc/dbops/backup.env
+ExecStart=/opt/dbops/bin/db_backup.sh
+
+# Hardening: jalan sebagai user dedicated, no privilege escalation
+User=dbops
+Group=dbops
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/postgres /var/log/dbops
+
+# Batas waktu (jika hang > 1 jam, kill)
+TimeoutStartSec=3600
+
+# Resource limit
+LimitNOFILE=65536
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,56 @@
+# ============================================================================
+# Docker Compose — local dev/test stack
+# Tujuan : Postgres + pgAdmin + Adminer dalam satu stack untuk development/
+#          testing lokal. TIDAK untuk production (lihat docs/05 + docs/10).
+# Cara pakai :
+#   export POSTGRES_PASSWORD=...
+#   docker compose -f examples/automation-iac/docker-local/docker-compose.yml up -d
+# Catatan :
+#   - Password via environment variable, tidak ada default di file.
+#   - Data di-mount ke volume agar bisa diinspeksi/dihapus manual.
+# ============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pg-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # WAJIB di-export
+      POSTGRES_DB:       ${POSTGRES_DB:-appdb}
+    ports:
+      - "127.0.0.1:5432:5432"   # hanya localhost — bukan 0.0.0.0
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin-dev
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer-dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data:

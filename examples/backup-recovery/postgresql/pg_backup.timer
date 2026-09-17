@@ -1,0 +1,21 @@
+[Unit]
+# ============================================================================
+# systemd timer — generic, no real data
+# Tujuan   : Jadwal aktivasi db-backup.service harian, lebih reliable dari
+#            cron (logging terpusat di journald, retry on failure, dst).
+# Lokasi   : /etc/systemd/system/db-backup.timer
+# Aktivasi : systemctl enable --now db-backup.timer
+# ============================================================================
+
+Description=Jadwal backup Postgres harian
+Requires=db-backup.service
+
+[Timer]
+# Jalan setiap hari jam 02:07 (sama dengan crontab, untuk transisi)
+OnCalendar=*-*-* 02:07:00
+Persistent=true              # jalankan yang terlewat jika mesin mati
+AccuracySec=1min
+RandomizedDelaySec=5min      # sebar beban jika banyak timer di cluster
+
+[Install]
+WantedBy=timers.target
